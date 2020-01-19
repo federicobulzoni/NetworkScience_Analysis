@@ -1,0 +1,6 @@
+"0","graph <- graph_from_incidence_matrix(dataset)"
+"0","graph_t <- as_tbl_graph(graph)"
+"0",""
+"0","graph_t <- graph_t %>%"
+"0","  activate(nodes) %>%"
+"0","  mutate(type = ifelse(type, ""summit"", ""partecipant""))"

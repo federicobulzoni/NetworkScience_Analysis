@@ -1,0 +1,33 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1579342800430.000,
+    "dirty" : false,
+    "encoding" : "",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "FF2270B2",
+    "lastKnownWriteTime" : 1579281871,
+    "last_content_update" : 1579342800430,
+    "path" : null,
+    "project_path" : null,
+    "properties" : {
+        "cacheKey" : "B833A77D",
+        "caption" : "summits",
+        "contentUrl" : "grid_resource/gridviewer.html?env=&obj=summits&cache_key=B833A77D",
+        "displayedObservations" : "47",
+        "environment" : "",
+        "expression" : "summits",
+        "object" : "summits",
+        "preview" : "0",
+        "totalObservations" : "47",
+        "variables" : "3"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 5,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_dataframe"
+}

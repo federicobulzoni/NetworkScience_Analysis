@@ -1,0 +1,27 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1579102850816.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "1178812895",
+    "id" : "3808FDC8",
+    "lastKnownWriteTime" : 1579446983,
+    "last_content_update" : 1579446983383,
+    "path" : "~/Documenti/UniUD/Network_Science/Ndrangheta_Bulzoni_142242/ndrangheta_analysis.Rmd",
+    "project_path" : "ndrangheta_analysis.Rmd",
+    "properties" : {
+        "cursorPosition" : "280,110",
+        "last_setup_crc32" : "85C93215bb338d19",
+        "scrollLine" : "266",
+        "tempName" : "Untitled1"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 1,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}

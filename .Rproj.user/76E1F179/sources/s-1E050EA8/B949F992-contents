@@ -1,0 +1,23 @@
+---
+title: "ndrangheta_analysis"
+author: "Federico Bulzoni"
+date: "15/1/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Analysis
+
+```{r}
+library(tidyr)
+library(ggplot2)
+library(ggraph)
+library(tidygraph)
+library(igraph)
+```
+```{r}
+incidenceDf <- read.table("./Dataset/ndrangheta.csv", col.names  = TRUE, row.names = 1)
+```

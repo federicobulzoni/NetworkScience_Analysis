@@ -1,0 +1,33 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1579255742085.000,
+    "dirty" : false,
+    "encoding" : "",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "E9B9416",
+    "lastKnownWriteTime" : 1579126786,
+    "last_content_update" : 1579255742085,
+    "path" : null,
+    "project_path" : null,
+    "properties" : {
+        "cacheKey" : "5ACFCBD1",
+        "caption" : "adjMatrix",
+        "contentUrl" : "grid_resource/gridviewer.html?env=&obj=adjMatrix&cache_key=5ACFCBD1",
+        "displayedObservations" : 151,
+        "environment" : "",
+        "expression" : "adjMatrix",
+        "object" : "adjMatrix",
+        "preview" : 0,
+        "totalObservations" : 151,
+        "variables" : 151
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 4,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_dataframe"
+}

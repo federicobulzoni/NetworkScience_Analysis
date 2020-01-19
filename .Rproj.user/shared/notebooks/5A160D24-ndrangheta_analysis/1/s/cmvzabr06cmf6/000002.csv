@@ -1,0 +1,4 @@
+"0","graph_t %>%"
+"0","  ggraph(layout = ""fr"") +"
+"0","  geom_edge_link() +"
+"0","  geom_node_point(aes(color = type))"

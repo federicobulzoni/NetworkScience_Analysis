@@ -1,0 +1,7 @@
+"0","# Ora sarebbe utile vedere le proiezioni one-mode."
+"0","personProjection <- bipartite_projection(graph, which = ""false"")"
+"0",""
+"0","personProjection_t <- as_tbl_graph(personProjection, directed = FALSE)"
+"0","personProjection_t <- personProjection_t %>%"
+"0","  activate(edges) %>%"
+"0","  rename(encounters = weight)"

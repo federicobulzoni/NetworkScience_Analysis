@@ -1,0 +1,293 @@
+---
+title: '''Ndrangheta in Lombardia: Operazione Infinito - Analisi della rete di partecipanti a summit'
+author: "Federico Bulzoni"
+date: "15/1/2020"
+output:
+  html_document:
+    df_print: kable
+  pdf_document: 
+    df_print: kable
+abstract: In questo report viene proposta un analisi mediante tecniche di network
+  science della rete di contatti tra esponenti della 'Ndrangheta lombarda. Il dataset
+  utilizzato è stato ricostruito a partire dai documenti della "Operazione Infinito".
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Introduzione
+La 'ndrangheta è un'organizzazione criminale di connotazione mafiosa italiana, originaria della Calabria. Al momento della scrittura di questo report è l'organizzazione criminale più potente al mondo con un giro d'affari globale di 53 miliardi di euro ed è l'unica a vantare la propria presenza in ogni continente del mondo.
+<!--Il business principale dell'organizzazione è il narcotraffico, ma si occupa anche di estorsione, prostituzione, traffico di armi, gioco d'azzardo e smaltimento di rifiuti speciali.-->
+
+#### L'operazione Crimine-Infinito
+L'operazione Crimine-Infinito è una maxi-operazione contro la 'ndrangheta calabrese e le collegate cosche milanesi partita nel 2003 e i cui sviluppi sono ancora in corso.
+Essa è formata da due filoni d'indagine: "Crimine" a Reggio Calabria e "Infinito" a Milano.
+
+Tale operazione ha portato all'arresto e alla successiva condanna di più di duecento persone ritenute affiliate all'organizzazione criminale.
+
+#### Dataset
+Il dataset utilizzato raccoglie le presenze di 151 sospettati a 47 summit 'ndranghetisti che si son tenuti tra il 2007 ed il 2009 in Lombardia, esso è stato ricostruito a partire dal documento  "ORDINANZA DI APPLICAZIONE DI MISURA COERCITIVA con mandato di cattura - art. 292 c.p.p." (http://www.genovaweb.org/ordinanza_gip-MILANO.pdf).
+
+#### Obiettivi
+Utilizzeremo il dataset descritto nel paragrafo precedente con l'obiettivo di identificare le figure chiave della 'ndrangheta lombarda. Inoltre cercheremo una suddivisione in gruppi dell'associazione mafiosa, in gergo chiamate "locali" mostrando le figure di spicco di ognuna.
+
+Il tutto verrà effettuato unicamente a partire dai dati a disposizione senza alcuna informazione aggiuntiva sulle persone presenti ai meeting.
+
+Ogni risultato ottenuto nell'analisi verrà confrontato con le informazioni reali emerse dall'indagine, fornendo pertanto modo di verificare l'efficacia delle tecniche di network science utilizzate.
+
+## Analisi
+```{r echo=FALSE, message=FALSE}
+library(dplyr)
+library(tidyr)
+library(tidygraph)
+library(igraph)
+library(ggplot2)
+library(ggraph)
+library(RColorBrewer)
+```
+
+```{r echo = FALSE}
+# I dati sono sotto forma di matrice di incidenza con corrispondenza persona-evento.
+dataset <- read.csv("./Dataset/ndrangheta.csv", row.names = 1)
+dataset <- dataset[rowSums(dataset[,-1]) > 0,]
+```
+
+```{r echo = FALSE}
+# Recupero informazioni sui summit.
+summits <- read.csv("./Dataset/summits.csv")
+```
+
+```{r echo = FALSE}
+graph <- graph_from_incidence_matrix(dataset)
+graph_t <- as_tbl_graph(graph)
+
+graph_t <- graph_t %>%
+  activate(nodes) %>%
+  mutate(type = ifelse(type, "summit", "partecipant"))
+```
+Come prima cosa mostriamo la rete di partecipazione ai summit, ogni nodo di colore azzurro corrisponde ad un sospettato e ogni nodo di colore rosso corrisponde ad un summit, una persona ha un collegamento ad un evento se vi era presente.
+
+```{r echo=FALSE}
+graph_t %>%
+  ggraph(layout = "fr") +
+  geom_edge_link() +
+  geom_node_point(aes(color = type))
+```
+
+Possiamo notare immediatamente alcuni aspetti della rete dal plot.
+Nella parte centrale della rete abbiamo un'insieme di summit fortemente connessi, che condividono molti partecipanti, possiamo supporre che tali eventi riguardino le "locali" principali della 'ndrangheta lombarda. Contrapposto a questo nucleo centrale, alle estremità della rete abbiamo summit ai quali partecipano persone che non sono presenti ad altri summit, questi eventi si può supporre che riguardino "locali" satellite e persone al di fuori dell'organizzazione criminale dal punto di vista organizzativo, come ad esempio imprenditori e politici.
+
+Una domanda che sorge spontanea è quali sono stati i summit con più partecipanti? Rispondiamo immediatamente alla domanda con la seguente classifica di summit ordinata in base al numero di partecipanti e con un grafo arricchito di tale informazione.
+
+```{r echo = FALSE}
+graph_t <- graph_t %>%
+  activate(nodes) %>%
+  mutate(degree = degree(graph_t))
+```
+
+```{r echo = FALSE, warning = FALSE, message = FALSE}
+allSummits <- graph_t %>%
+  activate(nodes) %>%
+  filter(type == "summit") %>%
+  as_tibble() %>%
+  inner_join(summits) %>%
+  rename(partecipants = degree) %>%
+  select(name, date, description, partecipants) %>%
+  arrange(-partecipants)
+
+topSummits <- allSummits %>%
+  head(5)
+
+topSummits
+```
+```{r echo = FALSE}
+graph_t %>%
+  ggraph(layout = "fr") + 
+  geom_node_point(aes(size = ifelse(type == "summit", degree, 1), color = ifelse(name %in% topSummits$name, "top summit", type))) +
+  geom_edge_link(aes(alpha = 0.1)) +
+  labs(color = "type", size = "partecipants") +
+  guides(edge_alpha = FALSE)
+```
+
+Le stesse domande possono essere poste dal punto di vista dei partecipanti, chi sono le persone che hanno partecipato a più summit? Lo mostriamo nella seguente classifica e nel seguente plot.
+
+```{r echo = FALSE}
+allPartecipants <- graph_t %>%
+  activate(nodes) %>%
+  filter(type == "partecipant") %>%
+  as_tibble() %>%
+  rename(partecipations = degree) %>%
+  select(name, partecipations) %>%
+  arrange(-partecipations)
+
+topPartecipants <- allPartecipants %>%
+  head(5)
+
+topPartecipants
+```
+
+```{r echo = FALSE}
+graph_t %>%
+  ggraph(layout = "fr") +
+  geom_node_point(aes(size = ifelse(type == "partecipant", degree, 1), color = ifelse(name %in% topPartecipants$name, "top partecipant", type))) +
+  geom_edge_link(aes(alpha = 0.1)) +
+  labs(color = "type", size = "partecipations") +
+  guides(edge_alpha = FALSE)
+```
+
+La semplice operazione appena effettuata permette già di individuare alcune figure chiave all'interno della organizzazione criminale:
+
+* **PANETTA Pietro Francesco**: è stato uomo di vertice della 'ndrangheta lombarda, capo della Locale di Cormano e insignito della dote di "Mammasantissima" all'interno dell'organizzazione.
+* **LAMARMORE Antonino**:	regge per contro del fratello la locale di Limbiate, ma soprattutto ha rivestito la carica di Mastro Generale della Lombardia. Il suo ruolo è stato quello di elemento di raccordo tra le varie locali e anche punto di riferimento degli affiliati per le ambasciate da e per la Calabria (http://www.inchiostroscomodo.com/?p=430).
+* **MANNO Alessandro**:  fu affiliato della Locale di Milano e capo della Locale di Pioltello dal giorno della sua costituzione ufficiale, il 1° marzo 2008.
+* **MAGNOLI Cosimo Raffaele**: all’interno della locale di Cormano risulta rivestire il ruolo di “Capo Società”, cioè di vice di PANETTA.
+* **BARRANCA Cosimo**:  fu un esponente di spicco della 'ndrangheta lombarda. Fu al vertice de La Lombardia e rivestì il ruolo di capo della Locale di Milano.
+
+Mostriamo ora una seconda rete ottenuta dalla precedente, nella quale i nodi rappresentano unicamente partecipanti a summit ed è presente un collegamento tra due individui se hanno partecipato almeno ad uno stesso summit. Lo spessore del collegamento tra due partecipanti indica il numero di summit a cui i due individui hanno partecipato assieme.
+
+```{r echo = FALSE}
+# Ora sarebbe utile vedere le proiezioni one-mode.
+personProjection <- bipartite_projection(graph, which = "false")
+
+personProjection_t <- as_tbl_graph(personProjection, directed = FALSE)
+personProjection_t <- personProjection_t %>%
+  activate(edges) %>%
+  rename(encounters = weight)
+```
+
+```{r echo = FALSE}
+personProjection_t %>%
+  ggraph(layout = "kk") +
+  geom_node_point() +
+  geom_edge_link(aes(alpha = encounters))
+```
+
+Possiamo notare che tale rete presenta una connessione capillare tra i membri dell'organizzazione, questa caratteristica permette alle informazioni di propagarsi in modo veloce e capillare all'interno dell'organizzazione criminale sebben essa sia divisa in sotto-gruppi.
+
+In effetti andando a verificare la distanza media tra due individui risulta una distanza media di:
+```{r echo = FALSE}
+# Gradi di separazione
+mean_distance(personProjection_t)
+```
+
+ossia, un'informazione per raggiungere un individuo a partire da un altro mediamente impiega due passaggi di parola.
+La distanza massima è invece di:
+
+```{r echo = FALSE}
+# Massima distanza tra due individui
+diameter(personProjection_t)
+```
+
+passaggi di parola.
+<!--
+```{r echo = FALSE}
+maxPath <- personProjection_t %>%
+  get_diameter()
+
+# Potrei colorare i nodi identificati in maxPath
+personProjection_t %>%
+  ggraph(layout = "kk") +
+  # Perfetto fin qua.
+  geom_node_point(show.legend = NULL, aes(color = ifelse(name %in% maxPath$name, T, F))) +
+  # Ora devo colorare gli archi che uniscono due punti all'interno di maxPath, FUNZIONA, ma l'output è da migliorare.
+  geom_edge_link(aes(color = ifelse(.N()$name[from] %in% maxPath$name & .N()$name[to] %in% maxPath$name, "red", "grey"), alpha = encounters), show.legend = FALSE)
+```
+-->
+
+A questo punto ad ogni membro dell'organizzazione andiamo ad associare un valore che indica quanto quel membro sia fondamentale per il passaggio delle informazioni all'interno della organizzazione. Estraiamo dunque la lista delle 10 persone più importanti all'interno dell'organizzazione secondo tale indice.
+
+```{r echo = FALSE}
+# È arrivato il momento di computare qualche indice di centralità.
+# Per calcolare la betweenness devo eliminare il peso dagli archi.
+personProjection_t <-
+  personProjection_t %>%
+  activate(nodes) %>%
+  mutate(betweenness = centrality_betweenness())
+```
+
+
+```{r echo = FALSE}
+top10ndranghetisti <- personProjection_t %>%
+  activate(nodes) %>%
+  as_tibble() %>%
+  arrange(-betweenness) %>%
+  head(10)
+
+top10ndranghetisti
+```
+
+Andando a verificare coloro che non erano presenti nella lista precedente ordinata per numero di presenziazioni a summit rimangono:
+
+* **CRISTELLO Francesco**: locale di Seregno, storica locale dell'Ndrangheta lombarda, Rocco Cristello ne era a capo prima di essere assassinato nella primavera del 2008, Francesco è suo fratello.
+* **MUIÀ Francesco**: mastro contabile della locale di Bollate.
+* **ASCONE Rocco**:  capo società del locale di Bollate e referente delle famiglie della Piana di Gioia Tauro nell’organismo di coordinamento dei locali di ‘ndrangheta al Nord, denominato "La Lombardia".
+* **LAVORATA Vincenzo**: riveste un ruolo di collegamento tra la ‘ndrangheta lombarda e quella calabrese e risulta altresì inserito ai vertici della locale di Cormano.
+* **MINASI Saverio**: capo della locale di Bresso, figura chiave nella tentata attuazione del progetto di creare una "Lombardia" (intesa come associazione 'ndranghetista) autonoma dalla 'ndrangheta calabrese.
+
+Come ultima analisi cerchiamo di identificare 5 gruppi principali all'interno della rete, essi vengono identificati mediante un algoritmo di community detection. Mostriamo la suddivisione in gruppi nel seguente plot:
+
+```{r echo = FALSE}
+# Community detection di 5 gruppi.
+comm <- cluster_walktrap(personProjection_t) %>%
+  as.hclust() %>%
+  cutree(k = 5)
+```
+
+
+```{r echo = FALSE}
+personProjection_t <- personProjection_t %>%
+  activate(nodes) %>%
+  mutate(community  = as.factor(comm))
+```
+
+```{r echo = FALSE}
+personProjection_t %>%
+  ggraph(layout = "kk") +
+  geom_node_point(aes(color = community, size = betweenness)) +
+  geom_edge_link(aes(alpha = encounters))
+```
+
+Di questi 5 gruppi possiamo stilare una classifica in base all'importanza media dei propri membri:
+
+```{r echo = FALSE}
+# Ora possiamo stilare un classifica di importanza in base alla betweenness dei clusters.
+rankingComm <- personProjection_t %>%
+  activate(nodes) %>%
+  as_tibble() %>%
+  group_by(community) %>%
+  summarize(avgBetweenness = mean(betweenness)) %>%
+  arrange(-avgBetweenness)
+ 
+rankingComm
+```
+
+Da quanto risulta possiamo supporre che la community 3 sia formata da persone esterne all'organizzazione criminale, ma che comunque ne sono venute a contatto, come potrebbero essere imprenditori o politici.
+
+Verificando questa supposizione risulta per lo più che i membri di tale gruppo sono o figli di boss, oppure figure marginali come supposto. Degno di nota è il fatto che IENCO Nicola sia stato un imprenditore edile ucciso a colpi di fucile nel 2011 in un agguato a Riace (Calabria).
+
+Come ultima analisi vediamo i due membri più importanti di ogni gruppo:
+
+```{r echo = FALSE}
+personProjection_t %>%
+  activate(nodes) %>%
+  as_tibble() %>%
+  arrange(-betweenness) %>%
+  group_by(community) %>%
+  filter(betweenness %in% sort(betweenness, decreasing = TRUE)[1:2]) %>%
+  arrange(community) %>%
+  head(10) 
+```
+
+Questa classifica ci permette di rilevare un anomalia, infatti, il gruppo 5 non ha come sembrava dalle analisi una alta centralità in media su ogni membro, bensì la sua centralità si concentra su di un unico membro portando ad ipotizzare che i membri di tale gruppo siano in realtà persone esterne all'organizzazione criminale tranne che per un punto di contatto con la direzione.
+
+## Conclusioni
+
+Questo report mostra le potenzialità dell'utlizzo di tecniche di scienza delle reti nell'investigazione criminale, esse infatti, possono essere un aiuto quando i dati investigativi sono scarsi. In questo report siamo giunti con un buon grado di accuratezza ad individuare persone chiave all'interno dell'organizzazione criminale 'ndrangheta con unicamente i dati relativi alla presenza o meno delle persone osservate a dei summit senza alcuna informazione aggiuntiva.
+
+Un ulteriore sviluppo di questa analisi potrebbe essere lo sfruttamento dell'informazione temporale riguardante gli eventi. Si potrebbe in tal caso sfruttare un rating temporale.
+
+
+
+
+
+

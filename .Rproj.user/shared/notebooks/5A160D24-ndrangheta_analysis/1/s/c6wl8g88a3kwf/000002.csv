@@ -1,0 +1,6 @@
+"0","graph_t %>%"
+"0","  ggraph(layout = ""fr"") +"
+"0","  geom_node_point(aes(size = ifelse(type == ""partecipant"", degree, 1), color = ifelse(name %in% topPartecipants$name, ""top partecipant"", type))) +"
+"0","  geom_edge_link(aes(alpha = 0.1)) +"
+"0","  labs(color = ""type"", size = ""partecipations"") +"
+"0","  guides(edge_alpha = FALSE)"

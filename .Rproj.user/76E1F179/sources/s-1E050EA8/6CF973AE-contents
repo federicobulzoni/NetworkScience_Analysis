@@ -1,0 +1,716 @@
+---
+title: "Implementation of an Elo model for the Serie A championship"
+author: "Federico Bulzoni"
+date: "19 luglio 2019"
+abstract: "The Elo rating system is used in many sports as a method for evaluating the skills of players (or teams), the idea behind it is relatively simple, a player which has more Elo points than his opponent is stronger than him and therefore is more likely that he wins the match. In this report, we give an overview on the `elo` package for R that allow us to do all the basis Elo calculations and then we give an Elo model for the italian Serie A soccer championship."
+output:
+  
+  html_document: default
+  pdf_document:
+        df_print: kable
+references:
+  
+  
+  
+- URL: 'https://cran.r-project.org/web/packages/elo/vignettes/elo.html'
+  id: elovignette
+  title: The 'elo' package
+  authors: Ethan Heinzen
+  issued:
+    
+    year: 2019
+    month: 1
+- URL: 'https://cran.r-project.org/web/packages/elo/elo.pdf'
+  id: eloman
+  title: Package 'elo'
+  authors: Ethan Heinzen
+  issued:
+    year: 2019
+    month: 1
+- URL: 'https://en.wikipedia.org/wiki/Elo_rating_system'
+  id: elowiki
+  title: Elo rating system
+- URL: 'https://en.wikipedia.org/wiki/World_Football_Elo_Ratings'
+  id: wfer
+  title: World Football Elo Ratings
+- URL: 'https://blog.mackie.io/the-elo-algorithm'
+  id: mathelo
+  title: The Math Behind ELO
+  authors: Scott Mackie
+  issued:
+    year: 2017
+    month: 2
+- DOI: 10.1371/journal.pone.0198668
+  URL: 'https://doi.org/10.1371/journal.pone.0198668'
+  authors: Fabian Wunderlich, Daniel Memmert
+  id: bettingodds
+  issued:
+    month: 2
+    year: 2018
+  publisher: "PLoS ONE"
+  title: "The Betting Odds Rating System: Using soccerforecasts to forecast soccer"
+  type: article-journal
+- URL: 'https://pdfs.semanticscholar.org/e28c/c07fc8153f745725133afc0f9c2ab7634a08.pdf'
+  id: optelo
+  title: "Improving Elo Rankings For Sports Experimenting on the English Premier League"
+  authors: Connor Sullivan, Christopher Cronin
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::kable
+library(knitr)
+```
+
+## Introduction
+The Elo rating system was created by *Arpad Elo* as an improved chess rating system over the previously used *Harkness system*, and then it was adopted in many other competition [@elowiki].
+
+The idea behind Elo is relatively simple, the Elo points of a player are computed on the basis of his historical match results, everybody starts with the same Elo points, so in a match between two players who had not played any match yet, they have same probability to win [@mathelo].
+
+On the other side, if a player has more Elo points than his challenger then he is more likely to win the match.
+
+The Elo points update is also based on an intuitive idea, after a match the winner steals some Elo points at his opponent, the amount of stolen points it's quantified by the actual result of the match and the expected winning probabilities of the players. If the underdog wins he steals a certain amount of Elo points at the favorite, on the other hand, if the favorite wins he steals less points to the underdog with respect to the previous case. 
+
+The classical Elo points update formula for chess is the following:
+$$ R_n = R_o + K*(S-E) $$
+where:
+
+* $R_n$ is the amount of Elo points of the player after the match,
+* $R_o$ is the amount of Elo points of the player before the match,
+* $K$ is a factor which says how many points can be gained or losed in a match,
+* $S$ is the actual outcome of the match, which can be:
+    + 0: defeat,
+    + 0.5: draw,
+    + 1: win.
+* $E$ is the expected winning probability of the player before the match.
+
+We give a focus on how the expected winning probability is computed, and on the meaning of the K-factor and how to choose a suitable value for it.
+
+### Expected outcome
+As we have mentioned before a player who has more Elo points than his opponent, it's more likely to win the match, so the expected outcome of the match is computed on the basis of the Elo points difference between the opponents. 
+
+The original Elo's assumption is that the performance of a player is a normally distributed random variable. The Elo ranking of the player corresponds to the mean of the distribution, and as we've said before the Elo ranking says how much skilled is the player; so on average the player plays with a certain level of skills, but his performance can be influenced by other factors like his mood, how much he slept the night before the match, luck, and so on and so forth.
+
+We give an explicative example: picture two players who play at a Trading Card Game (e.g. Yu-Gi-Oh, Magic), the Elo ratings give us an idea of how strong the decks are, the player who plays with the best rated deck can be unlucky and draw the weaker cards of his deck, but anyway the cards in his deck are on average stronger than those of the opponent.
+
+As we've said before Elo in his original assumption refers to a normal distribution, but any CDF (Cumulative Distribution Function) can be used instead. The most common choice is the logistic distribution:
+$$ F(x; \mu, s) = \frac{1}{1+e^{- \frac{x - \mu}{s}}} $$
+where:
+
+* $\mu$ is the mean, and tells where the distribution is centered on the x-axis,
+* $s$ is a scale parameter and tells how it's spreaded the distribution, namely it affects the width of the distribution.
+
+The logistic distribution it's preferred to the normal distribution because of its thicker tails, that are more suitable for model the randomness of the interested phenomena. 
+
+\medskip
+```{r}
+xx<-seq(-4.5,4.5,0.01)
+plot(xx,dnorm(xx),ylim=c(0,0.4),
+type='l',lwd=2,cex.axis=1.3,xlab="x",ylab="f(x)", main = "Normal vs. Logistic distribution") 
+lines(xx, dlogis(xx), col = 'red')
+```
+
+We use the logistic distribution in an Elo rating system taking fixed mean, usually $\mu = 0$ and 
+$$ x = R_a - R_b$$
+namely the difference between the players Elo scores.
+Usually, the scale parameter $s$ is take:
+$$ s = \frac{n}{\ln{10}} $$
+with $n$ arbitrarly chosen, substituing this parameters in the previous formula we obtain:
+$$F(R_a - R_b; 0, n / \ln{10}) = \frac{1}{1 + e^{- \frac{R_a - R_b}{n/\ln{10}}}} = \frac{1}{1 + 10^{- \frac{R_a - R_b}{n}}}$$
+So, the meaning of the parameter $n$ is: if the player A has $n$ Elo points more than player B, he is 10 times stronger than him and he should win 10 matches out of 11. Usually the parameter $n$ is taken equal to $400$.
+
+\medskip
+```{r}
+xx <- seq(-200, 1000, 0.01)
+mu <- 400
+s <- 400/log(10)
+
+plot(xx, dlogis(xx, mu, s), type = 'l', lwd = 2, xlab = 'x', ylab = 'f(x)', main = "Distribution function with Ra - Rb = 400, n = 400")
+abline(v = 0, col = 'red')
+
+cord.x <- c(-200,seq(-200, 0, 0.01))
+cord.y <- c(-200,dlogis(seq(-200,0,0.01), mu, s))
+polygon(cord.x,cord.y,col='skyblue')
+
+cord.x <- c(0, seq(0, 1000, 0.01), 1000)
+cord.y <- c(0, dlogis(seq(0, 1000, 0.01), mu, s), 0)
+polygon(cord.x, cord.y, col='yellow')
+legend(800, 0.0010, c("B wins", "A wins"), pch = 16, col = c('skyblue', 'yellow'))
+```
+
+#### K-factor
+The K-factor sets the "sensitivity" of how wins and loses impact on the Elo ratings:
+
+* a large K-factor can make the Elo ratings too volatile and that's not a desiderable situation. Picture a situation where an high skilled player who has win thousands and thousands of matches, lose against a low-rated player only for bad luck; if he sees his Elo rating that goes down a lot, he could be upset;
+* a small K-factor can make scores too stagnant, and also this situation is not desiderable. Picture a player who have been practicing and gained new skills that wants to be recognized to him, if the K-factor is too small, he could need lots of games to reach his actual level.
+
+The K-factor namely says what is the possible maximum shift of points between two players after a match, it should be appropriate for the current value of $n$, that we recall, says how much Elo points of difference there are between a player considered 10 times more skilled than the other.
+
+As an example, consider a player who plays $20$ matches where in each match is against an opponent of his same level in that moment, if we want that this player after these matches be considered 10 times stronger than he was before we can compute a suitable K-factor by some simple maths:
+
+1. After each match, our player gains:
+$$ gainedPoints = K*(S - E)  = K*(1-0.5) = \frac{K}{2}$$
+Elo points;
+2. We want that after $N_{matches}$ matches where he gains $K/2$ Elo points he reach the sum of $n$ Elo points gained, so by a simple equation:
+$$ (\frac{K}{2})*N_{matches} = n $$
+Let $N_{matches} = 20$ and $n = 400$, we obtain:
+$$ (\frac{K}{2}) * 20 = 400 \Rightarrow K*10 = 400 \Rightarrow K = 40$$
+
+So, with $n=400$ and $K=40$ a player who wins $20$ matches against equal rated opponents becomes 10 times stronger than he was before.
+
+It's also possible to use a tiered K-factor system, for modelling the different experiences of the players, for example we can assign:
+
+* $K=40$ for novice players,
+* $K=20$ for medium level players,
+* $K=10$ for expert players.
+
+That's reasonable, a novice player has a larger variability in his performances given by the inexperience, and moreover, in that way, a novice player can reach his appropriate Elo level quickly; on the other side an expert player who loses a match against a novice for bad luck will not lose too much Elo points.
+
+**Pay attention:** in the case of a tiered K-factor system, the sum of points losed and gained in a match doesn't give zero. 
+
+Another possibility is to use different K-factors on the basis of the competition, for example we can give an higher K-factor to a World championship match than to a friendly match. This is reasonable for at least two reasons:
+
+1. intuitively a friendly match must impact less on the ranking than a World championship match,
+2. is useful for modelling the uncertainty of an important match where both the players play at their best.
+
+
+## Elo model for soccer
+In soccer unlike chess it's possible to consider other variables like how a team wins the match (if the team wins with a large margin it's more valuable than if it wins with a minimum margin) and the home field advantage. The "*World Football Elo Ratings*" [@wfer] take into consideration when calculating a team's new rating:
+
+* The team's old rating,
+* The considered weight of the tournament,
+* The goal difference of the match,
+* The result of the match,
+* The expected result of the match.
+
+The update formula is:
+$$ R_n = R_o + K*G*(S - E) $$
+where:
+
+* $R_n$, $R_o$, $S$ and $E$ have the same meaning of the chess case, $K$ also has the same meaning, but different K-factor are used on the basis of the tournament of the match,
+* $G$ is the goal difference factor.
+
+and the expected outcome $E$ is given by the following formula:
+$$ E = \frac{1}{10^{- \frac{(R_h + H_f) - R_v}{400}} + 1} $$
+where:
+
+* $R_h$ is the home team rating,
+* $R_v$ is the visitor team rating,
+* $H_f$ is the home field advantage.
+
+
+## The `elo` package for R
+The `elo` package [@elovignette][@eloman] for R includes funtions to address all kinds of Elo calculations. It can be installed and loaded in the R environment with the following commands:
+
+```{r eval = FALSE}
+install.packages("elo")
+```
+```{r message = FALSE}
+library(elo)
+```
+
+### Basic functions
+For the basic Elo calculations the package offers the following functions:
+
+* `elo.prob()`: given the Elo points of `team.A` and `team.B` (scalar or vector) it calculate the probability that `team.A` beats `team.B`,
+* `elo.update()`: given a numeric vector of wins by team A and a numeric vector of Elo scores of `team.A` and another vector of Elo scores of `team.B` it calculate the vector of Elo updates for the matches.
+* `elo.calc()`: similar to `elo.update()` but it gives the updated Elo values for `team.A` and `team.B`.
+
+We give some example:
+
+```{r}
+elo.A <- c(1500, 1500)
+elo.B <- c(1500, 1600)
+elo.prob(elo.A, elo.B)
+```
+
+In the first case `team.A` wins with a 50% chance by the fact that the opponent is of equal rating, while in the second case by the fact that it has 100 Elo points less than the opponent it has 36% chanches of victory.
+
+```{r}
+wins.A <- c(1,0)
+elo.update(wins.A, elo.A, elo.B, k = 20)
+```
+The meaning is that in the first case `team.A` gains 10 Elo points ($K*(S-E) = 20*(1-0.5) = 10$), while in the second case it loses 7.1987 points ($K*(S-E) = 20*(0 - 0.359935) = 7.1987$).
+
+```{r}
+elo.calc(wins.A, elo.A, elo.B, k = 20)
+```
+Trivial to understand by the previous example.
+
+
+### The `elo.run()` function
+The `elo.run()` function allows to calculate Elos for a series of matches. It has a `formula =` and `data =` interface. `formula =` should be in the format of `wins.A ~ team.A + team.B`. The `score()` function taken in input the points made in the match by `team.A` and `team.B` compute the result of the match (0: loss, 0.5: tie, 1: win). We load the dataset `tournament` carried by the `elo` package to give some examples.
+```{r}
+data(tournament)
+str(tournament)
+```
+
+\medskip
+The simplest Elo model which is given by the formula $R_n = R_o + K*(S - E)$
+can be used with the following formula:
+
+```{r}
+elo.res <- elo.run(score(points.Home, points.Visitor) ~ 
+                     team.Home + 
+                     team.Visitor,
+                   data = tournament, k = 20)
+```
+
+
+The `elo.run()` function returns an `elo.run` object. We can convert it in an other form, like a dataframe to inspect its content.
+
+```{r}
+head(as.data.frame(elo.res))
+```
+
+It's also possible to specify a more complex formula to implement a different Elo model, for example with the function `k()` it's possible to set a parameter for the margin of victory:
+
+```{r eval = FALSE}
+elo.run(score(points.Home, points.Visitor) ~ team.Home + 
+          team.Visitor +
+          k(20 * log(abs(points.Home - points.Visitor) + 1)), 
+        data = tournament)
+```
+
+This corresponds to the update formula: 
+$$ R_n = R_o + 20 * \log{ (|P_h -P_v| + 1)} $$
+It's also possible with the `adjust()` function to adjust one team's Elo,
+
+```{r eval = FALSE}
+elo.run(score(points.Home, points.Visitor) ~ 
+          adjust(team.Home, 10) + 
+          team.Visitor, 
+        data = tournament, k = 20)
+```
+and with the function `regress()` to regress Elos back to a fixed value after certain matches (e.g the start of a new season, or after a trading market session) the first argument it's a logical vector saying if the correspondent element needs to be regressed, the second one says at which values regress (it can be a scalar or a vector with different values for different teams) and the last one how much to regress toward that values.
+
+```{r eval=FALSE}
+elo.run(score(points.Home, points.Visitor) ~ team.Home + team.Visitor +
+        regress(half, 1500, 0.2),
+        data = tournament, k = 20)
+```
+
+### Helper functions
+On the objects of class `elo.run` it's possible to use several helper functions, like:
+
+* `summary()` to get some summary statistics,
+* `as.matrix()` to create a matrix of running Elos,
+* `final.elos()` which extract the final Elos per team.
+
+### Making predictions
+It is also possible to use the results of `elo.run()` to make predictions on future match-ups.
+
+```{r}
+results <- elo.run(score(points.Home, points.Visitor) ~
+                     adjust(team.Home, 10) +
+                     team.Visitor,
+                   data = tournament, k = 20)
+newdat <- data.frame(
+  team.Home = "Athletic Armadillos",
+  team.Visitor = "Blundering Baboons"
+)
+predict(results, newdata = newdat)
+```
+
+### Basic functions revisited - formula interface
+Not only `elo.run()` accepts formulas as input, we can use them also with `elo.prob()`, `elo.update()` and `elo.calc()`.
+
+```{r}
+dat <- data.frame(elo.A = c(1500, 1500), elo.B = c(1500, 1600),
+                  wins.A = c(1, 0), k = 20)
+form <- wins.A ~ elo.A + elo.B + k(k)
+```
+
+We set a standard Elo update formula and we use it with all the "basic" functions:
+
+```{r}
+elo.prob(form, dat)
+```
+
+```{r}
+elo.update(form, dat)
+```
+
+```{r}
+elo.calc(form, dat)
+```
+
+As we can see the results are the same of the previous examples, but with the formula interface as for the `elo.run()` function we can give more complex Elo update formula using the `k()` function.
+
+
+## An Elo model for the italian Serie A soccer championship
+We implement in this section an Elo model for the italian Serie A soccer championship, we use the `italy` dataset contained in the `engsoccerdata` package which contains several English and European soccer results data from 1871 to 2016. For our development we will also use the packages: `dplyr` and `tibble` for data manipulations, the package `lattice` for data visualization and the package `elo` for the Elo calculations.
+
+First of all we load in the environment the needed packages.
+
+```{r message = F}
+library(engsoccerdata)
+library(dplyr)
+library(tibble)
+library(lattice)
+library(elo)
+```
+
+### Preliminary analysis
+We give a preliminary analysis on the Seria A's seasons from 2010 to 2015, to find if there is an home field advantage and if it makes sense to give weight to the goal difference in the score update formula. 
+We give a comparison between the seasons from 2010 to 2014 and the 2015 season to see if the distributions of match result and goal difference are almost the same in the two samples.
+
+Firstly, we retrieve the Italian championships from the 2010 season up to the 2015 season, and we give a look at the structure of the dataset.
+
+```{r}
+t_italy2010_15 <- as_tibble(italy) %>% filter(Season > 2009 & Season < 2016)
+str(t_italy2010_15)
+```
+
+The variables needed in our analysis are: `Date`, `Season`, `home`, `visitor`, `hgoal` and `vgoal`; the other variables are not necessary.
+
+```{r}
+t_italy2010_15 <- t_italy2010_15 %>%
+  select(Date, Season, home, visitor, hgoal, vgoal)
+```
+
+Now we add some new columns at our dataset, that we will use for compute the interested statistics, we need a column `goalDiff` which contains the goal difference for each match and a column `result` with the result of each match.
+
+The values of the column `result` have the following meaning:
+
+* 0: visitor win,
+* 0.5: draw,
+* 1: home win.
+
+We choose this encoding, to be consistent with the coding used in the Elo model from the home team's perspective.
+
+```{r}
+goalDiff <- with(t_italy2010_15, abs(hgoal - vgoal))
+t_italy2010_15 <- t_italy2010_15 %>%
+  mutate(goalDiff, 
+         result = case_when(
+           hgoal - vgoal < 0 ~ 0,
+           hgoal - vgoal == 0 ~ 0.5,
+           hgoal - vgoal > 0 ~ 1
+         )
+  )
+```
+
+Let's see how it look our dataset:
+
+```{r}
+head(t_italy2010_15)
+```
+
+We split our dataset in two datasets:
+
+* `t_italy2010_14` which contains the data for the seasons from 2010 to 2014,
+* `t_italy2015` which contains the data for the 2015 season.
+
+\medskip
+```{r}
+t_italy2010_14 <- t_italy2010_15 %>% filter(Season < 2015)
+t_italy2015 <- t_italy2010_15 %>% filter(Season == 2015)
+```
+
+We want to see if the home factor is an advantage, so we plot barplots of the result frequencies for the two datasets.
+
+```{r}
+res2010_14 <- t_italy2010_14 %>% select(result)
+rel_freqRes2010_14 <- table(res2010_14)/sum(table(res2010_14))
+
+res2015 <- t_italy2015 %>% select(result)
+rel_freqRes2015 <- table(res2015)/sum(table(res2015))
+
+opar <- par(mfrow = c(1,2))
+barplot(rel_freqRes2010_14)
+barplot(rel_freqRes2015)
+par(opar)
+```
+As we can see by this plot the home wins are consistently more than the visitor wins, moreover the trend for the 2010-2014 seasons is consistent with the 2015 season one. 
+By this, we can conclude that there is an home factor advantage, so we have to consider it in our Elo model.
+
+\medskip
+Now we want to see the distribution of the goal difference, to quantify how much it has to influence the Elo rankings update. For doing that we plot barplots of the goal difference's distributions for the two datasets.
+
+```{r}
+diffGoal_2010_14 <- t_italy2010_14 %>%
+  select(goalDiff) %>% 
+  filter(goalDiff > 0)
+
+rel_diffGoal_2010_14 <- table(diffGoal_2010_14)/sum(table(diffGoal_2010_14))
+
+diffGoal_2015 <- t_italy2015 %>%
+  select(goalDiff) %>%
+  filter(goalDiff > 0)
+
+rel_diffGoal_2015 <- table(diffGoal_2015)/sum(table(diffGoal_2015))
+
+opar <- par(mfrow = c(1,2))
+
+barplot(rel_diffGoal_2010_14)
+barplot(rel_diffGoal_2015)
+
+par(opar)
+```
+
+This plot gives an evidence of the fact that the goal difference is a factor to be considered for the ratings update, this is reasonable since wins with a large goal difference are more valuable than wins with only one goal of difference, moreover the distributions for the 2010-2014 seasons and the 2015 season are similar.
+
+The *World Football Elo Ratings* models the goal difference in the update formula with a `G` factor of:
+
+* $G = 1$ for draw or win with one goal of difference,
+* $G = \frac{3}{2}$  for two goals of difference,
+* $G = \frac{11 + goalDiff}{8}$ for three or more goals of difference.
+
+We will use the same `G` factor in our model, but it can be modelled in different ways, as an example we can model it also with a formula of the type:
+
+$$ G = (1 + goalDiff)^\lambda $$
+with $\lambda$ a parameter arbitrarly chosen.
+
+
+### Model implementation
+First of all let's take back our dataset with all the seasons from 2010 up to 2015, we add to it some new useful columns:
+
+* `week` which tells in which week of the championship the match is played, 
+* `midS` which tells if the match is played on the first week after the first round of the season,
+* `newS` which tells if the match is played on the championship's first week.
+
+We will use `midS` and `newS` to regress the Elo points with the function `regress()`, we do that to take into account that the teams can be changed after the transfer market window, and also to balance the scores at the beginning of the season. We can not consider the date of the match, the championship's week is enough.
+
+```{r}
+week <- NULL
+for (j in 2010:2015){
+  for (i in 1:38) {
+    week <- c(week, rep(i,10))
+  }
+}
+
+t_italy2010_15 <- t_italy2010_15 %>%
+  mutate(week,
+         midS = ifelse(week == 20, TRUE, FALSE),
+         newS = ifelse(week == 1, TRUE, FALSE)
+  ) %>%
+  select(Season, week, home, visitor, hgoal, vgoal, goalDiff, result, midS, newS)
+
+t_italy2010_14 <- t_italy2010_15 %>% filter(Season < 2015)
+t_italy2015 <- t_italy2010_15 %>% filter(Season == 2015)
+```
+
+Now our dataset looks like this:
+```{r}
+head(t_italy2010_15)
+```
+
+The Elo model that we want to implement has the following rating update formula:
+
+$$ R_n = R_o + K*G*(S - E) $$
+where $G$ is the previously defined one;
+and the expected outcome $E$ is given by the following formula:
+$$ E = \frac{1}{10^{- \frac{(R_h + H_f) - R_v}{400}} + 1} $$
+where $H_f$ is the home field factor.
+
+So, we define our G parameter with an R function:
+
+```{r}
+G <- function(goalDiff){
+  if (goalDiff < 2){
+    return( 1 )
+  }
+  else if (goalDiff == 2){
+    return( 3/2 )
+  }
+  else {
+    return( (11 + goalDiff) / 8 )
+  }
+}
+```
+
+and we set the standard parameters adopted by *World Football Elo Ratings* also for the `K`-factor and the home field factor `hf` that are:
+
+* $K = 30$ since we are dealing with a national championship,
+* $H_f = 100$
+
+```{r}
+K <- 30
+hf <- 100
+```
+
+As default, the Elo ratings of the teams initially are all setted to $1500$, moreover we regress Elos back to 1500, with a carry over of 0.2 at the middle of the season to take into account the team changes due to the transfer market.
+With these parameters we compute the Elo ratings for the 2015 Serie A championship's season.
+
+```{r}
+elo.result <- elo.run(score(hgoal, vgoal) ~ 
+                        adjust(home, hf) +
+                        visitor + 
+                        regress(midS, 1500, 0.2) +
+                        k(K*sapply(goalDiff, G)),
+                      data = t_italy2015)
+```
+
+Now we print a summary of the results:
+
+```{r}
+summary(elo.result)
+```
+
+Considering the intrinsic randomness of soccer's match results (if it were not, nobody would look at it) the model performance can be considered satisfactory, looking at the confusion matrix we can see that on $175$ home wins the model correctly predicted $167$ of them, the result that is predicted worse it's the visitor win.
+
+
+Let's give a look at the output of `elo.run()`, to do that we convert the `elo.run` object in a `tibble`.
+```{r}
+t_elo.result <- as_tibble(elo.result)
+t_elo.result %>% tail(180) %>% head(10)
+```
+
+### Elo results analysis
+We make some analysis on our Elo results, first of all we compute what is the average shift of Elo points after a match:
+
+```{r}
+mean(abs(t_elo.result$update))
+```
+
+Now we compute what is the average expected winning probability for the home team:
+
+```{r}
+mean(abs(t_elo.result$p.A))
+```
+
+And we check what's the match which had caused the larger Elo points shift.
+
+```{r}
+maxShift <- max(abs(t_elo.result$update))
+maxShift
+```
+```{r warning = FALSE}
+t_elo.result %>% 
+  filter(update == maxShift | update == -maxShift) %>%
+  inner_join(t_italy2015, 
+             by = c("team.A" = "home", "team.B" = "visitor")) %>%
+  select(team.A, team.B, p.A, elo.A, elo.B, goalDiff, result)
+
+```
+As we can see, the result was really unexpected and there was a huge Elo points difference between the teams.
+
+We also plot the variation of the Elo points as a function of time, for the teams: Juventus, Fiorentina, Frosinone and Napoli.
+
+```{r}
+week_2 <- tail(week, 380)
+
+eloVariationA <- t_elo.result %>%
+  select(team.A, elo.A) %>%
+  mutate(week = week_2) %>%
+  rename(team = team.A, elo = elo.A) 
+
+eloVariationB <- t_elo.result %>%
+  select(team.B, elo.B) %>%
+  mutate(week = week_2) %>%
+  rename(team = team.B, elo = elo.B)
+
+eloVariation <- rbind(eloVariationA, eloVariationB) %>% arrange(week) 
+
+eloVariation_restricted <- eloVariation %>%
+  filter(team == "Juventus" | team == "SSC Napoli" | team == "Frosinone Calcio" | team == "ACF Fiorentina")
+
+xyplot(elo ~ week, data = eloVariation_restricted, 
+       groups = factor(team),
+       type = "b",
+       auto.key=list(space="right"))
+```
+
+Finally we give a comparison between the team's end season Elo points, and the championship's final chart, we don't give the code of this computation here because it's long and not meaningful with respect to this report.
+
+```{r echo = FALSE, message= FALSE, warning = FALSE}
+numberOfHomeWins <- t_italy2015 %>%
+  filter(result == 1) %>%
+  group_by(home)  %>%
+  summarise(winH = n()) %>%
+  rename(team = home)
+
+numberOfDrawsH <- t_italy2015 %>%
+  filter(result == 0.5) %>%
+  group_by(home) %>%
+  summarise(drawsH = n()) %>%
+  rename(team = home)
+
+numberOfDrawsV <- t_italy2015 %>%
+  filter(result == 0.5) %>%
+  group_by(visitor) %>%
+  summarise(drawsV = n()) %>%
+  rename(team = visitor)
+
+numberOfVisitorWins <- t_italy2015 %>%
+  filter(result == 0) %>%
+  group_by(visitor) %>%
+  summarise(winV = n()) %>%
+  rename(team = visitor)
+
+finalEloPoints <- eloVariation %>%
+  filter(week == 38)
+
+chart <-numberOfDrawsH %>%
+  inner_join(numberOfDrawsV) %>%
+  inner_join(numberOfHomeWins) %>%
+  inner_join(numberOfVisitorWins) %>%
+  inner_join(finalEloPoints) %>%
+  mutate(points = 3*(winV + winH) + 1*(drawsV + drawsH)) %>%
+  arrange(desc(points)) %>%
+  mutate(rank = 1:20) %>%
+  select(rank, team, points, elo)
+
+chart
+```
+
+As we can see the Elo's points chart do not necessarily coincide with the championship's chart, that's ok, as an example it's possible that a team had win a lot of matches against low-rated team and gained more points than another team who had win less matches but against high-rated team.
+
+### Making predictions based on the 2010-2014 seasons
+By the preliminary analysis we've seen that the distributions of goal difference and result for the 2010-2014 seasons and the 2015 season are very similar, so, by that we want to make prediction on the 2015 season with an Elo model trained on the five previous seasons and only the first week of the 2015 season. 
+
+First of all we build the training set.
+```{r}
+first2015 <- t_italy2015 %>% filter(week == 1)
+training_set <- rbind(t_italy2010_14, first2015)
+```
+
+Now we train our model, the differences between the previous model are:
+
+* We regress the elo points also at the beginning of a new season,
+* At the newly promoted teams that had not played in the previous five seasons in Serie A, we give an initial Elo rating of $1300$.
+
+```{r}
+elo.result2 <- elo.run(score(hgoal, vgoal) ~ 
+                      adjust(home, hf) +
+                      visitor + 
+                      regress(newS | midS, 1500, 0.2) +
+                      k(K*sapply(goalDiff, G)),
+                    initial.elos = 1300,
+                    data = training_set)
+```
+
+We build our test set with the remaining 2015 season's matches, and we use it for make predictions.
+
+```{r}
+test_set <- t_italy2015 %>% filter(week > 1)
+predictedRes <- test_set %>% 
+  mutate(prob.A = predict(elo.result2, test_set),
+         residual = result - prob.A) %>%
+  select(Season, week, home, visitor, prob.A, result, residual)
+```
+
+Let's see how the dataset enriched with predictions and residuals look.
+```{r}
+head(predictedRes)
+```
+
+Now we can compute the MSE of the predicted probabilities versus the actual results.
+
+```{r}
+mse <- mean(predictedRes$residual^2)
+mse
+```
+
+Compared to the MSE of $0.1672$ obtained by the model trained on all and only the 2015 season matches we have a very low difference, this is a good result considering that the model is predicting 37 championship's weeks in the future without any knowledge of what's happening in these matches.
+
+
+## Conclusions
+In this report we've seen what an Elo system is and how it works, we've given an overview of the `elo` package for `R` and an implementation of an Elo system for the Italian Serie A soccer championship.
+
+Many other analysis can be done, as an example it's possible to get the Elo model parameters with a procedure of minimization of a cost function [@optelo] (e.g. MSE), furthermore the model can be extended with other variables, as an example it's possible to obtain the probability for the results by the betting odds [@bettingodds] which carry on more information than the simple expected probabilities given by the Elo model, and it's also possible to consider other factors like the weather forecast or the win strikes. 
+
+The Elo models as we've said in the introduction can be applied to every sports (or *esports*) where two teams compete, for more details on how the Elo models work and on some implementations we refer the reader to the bibliography.
+
+## References
